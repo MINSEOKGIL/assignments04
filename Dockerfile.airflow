@@ -1,0 +1,11 @@
+FROM apache/airflow:2.8.1-python3.10
+
+# 패키지 설치는 root 로
+USER airflow
+
+RUN pip install --no-cache-dir \
+    apache-airflow-providers-apache-spark==5.3.3
+    psycopg2-binary==2.9.9
+
+# 다시 airflow 유저로 복귀
+USER airflow
