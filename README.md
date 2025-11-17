@@ -42,6 +42,7 @@ curl http://localhost:8083/connectors
 # product_id, user_id, event_time event_type로  pirmarykey지정 이벤트의 유니크 KEY역할수행
 # 이러한 key를 기준으로 데이터가 있으면 update, 없으면 insert
 # POSTGRES DB 데이터 중복을 방지
+# 중복방지용으로 키를 3개로 스파크배치를 돌렸더니 cpu사용량이 늘어나서 upsert비용을 줄여야하기에 product_id를 제거
 curl -X POST http://localhost:8083/connectors \
   -H "Content-Type: application/json" \
   -d '{
@@ -98,3 +99,9 @@ SELECT COUNT(*) FROM "user_clickstream";
 /opt/spark/extra-jars/commons-pool2-2.12.0.jar,\
 /opt/spark/extra-jars/postgresql-42.7.1.jar \
   /opt/spark/jobs/spark_streaming.py
+
+# session_behavior_job 실행
+/opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  --jars /opt/spark/extra-jars/postgresql-42.7.1.jar \
+  /opt/spark/jobs/spark_session_behavior_job.py 2025-11-17
