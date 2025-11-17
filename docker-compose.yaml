@@ -1,5 +1,84 @@
 
+
+x-airflow-common:
+  &airflow-common
+  build:
+    context: ./airflow
+    dockerfile: Dockerfile.airflow
+  image: airflow-spark:2.9.3-python3.10
+
+
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://admin:admin@postgres/airflow
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    AIRFLOW_CONN_SPARK_DEFAULT: "spark://spark-master:7077"
+  volumes:
+    - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
+    - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
+    - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
+    - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
+  user: "${AIRFLOW_UID:-50000}:0"
+  networks:
+    - kafka-net
+
 services:
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mkdir -p /sources/logs /sources/dags /sources/plugins
+        chown -R "${AIRFLOW_UID:-50000}:0" /sources/{logs,dags,plugins}
+        exec /entrypoint airflow version
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+      _PIP_ADDITIONAL_REQUIREMENTS: ''
+    user: "0:0"
+    volumes:
+      - ${AIRFLOW_PROJ_DIR:-.}:/sources
+
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.0
     environment:
@@ -9,9 +88,6 @@ services:
    
     networks:
       - kafka-net
-
-   
-  
 
   kafka1:
     image: confluentinc/cp-kafka:7.6.0
@@ -164,101 +240,28 @@ services:
     networks:
       - kafka-net
 
-
-
-  # ------------------------------------------
-  # 1. Airflow 환경 초기화 (DB 및 Admin User 생성)
-  # ------------------------------------------
-  airflow-init:
-    image: apache/airflow:2.8.1-python3.10
-    container_name: airflow-init
-    # Spark 관련 패키지를 설치합니다 (Airflow에서 SparkSubmitOperator 등을 사용하기 위함)
-    entrypoint: /bin/bash
-    command: -c "
-      
-      airflow db init &&
-      airflow users create \
-        --username admin \
-        --firstname Admin \
-        --lastname User \
-        --role Admin \
-        --email admin@example.com \
-        --password admin
-      "
-    environment:
-      - AIRFLOW_HOME=/opt/airflow
-    volumes:
-      - airflow_data:/opt/airflow
-      - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/logs:/opt/airflow/logs
-      - ./airflow/plugins:/opt/airflow/plugins
-      - ./spark/jobs:/opt/spark/jobs 
-    networks:
-      - kafka-net
-
-  # ------------------------------------------
-  # 2. Airflow Webserver (UI 접속)
-  # ------------------------------------------
-  airflow-webserver:
-    image: apache/airflow:2.8.1-python3.10
-    container_name: airflow-webserver
-    depends_on:
-      - airflow-init
-    ports:
-      - "8080:8080" # Airflow UI는 8080 포트를 사용
-    environment:
-      - AIRFLOW_HOME=/opt/airflow
-      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor # 개발용으로 SQLite와 호환되는 SequentialExecutor 사용
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
-    volumes:
-      - airflow_data:/opt/airflow
-      - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/logs:/opt/airflow/logs
-      - ./airflow/plugins:/opt/airflow/plugins
-      - ./spark/jobs:/opt/spark/jobs 
-    command: webserver
-    restart: always
-    networks:
-      - kafka-net
-
-  # ------------------------------------------
-  # 3. Airflow Scheduler (DAG 스케줄 관리)
-  # ------------------------------------------
-  airflow-scheduler:
-    image: apache/airflow:2.8.1-python3.10
-    container_name: airflow-scheduler
-    depends_on:
-      - airflow-webserver
-      - spark-master
-    environment:
-      - AIRFLOW_HOME=/opt/airflow
-      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor # 개발용으로 SQLite와 호환되는 SequentialExecutor 사용
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
-    volumes:
-      - airflow_data:/opt/airflow
-      - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/logs:/opt/airflow/logs
-      - ./airflow/plugins:/opt/airflow/plugins
-      - ./spark/jobs:/opt/spark/jobs 
-    command: scheduler
-    restart: always
-    networks:
-      - kafka-net
   
-
+    
 
 
   # ------------------------------------------
   # 4. Spark Master Node
   # ------------------------------------------
   spark-master:
+  
     image: apache/spark:3.5.1
     container_name: spark-master
+    env_file:
+      - .env
     environment:
       - SPARK_MODE=master
       - SPARK_NO_DAEMONIZE=true        # 로그가 foreground로 출력되어 Docker 로그로 확인 가능
       - SPARK_LOG_DIR=/opt/spark/logs  # 로그 저장 경로 지정
       - SPARK_MASTER_WEBUI_PORT=8081
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - JDBC_URL=${JDBC_URL}
+
     command: >
       bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
                --host spark-master
@@ -283,12 +286,17 @@ services:
     container_name: spark-worker
     depends_on:
       - spark-master
+    env_file:
+      - .env  
     environment:
       - SPARK_MODE=worker
       - SPARK_WORKER_CORES=2           # CPU 코어 수 제한
       - SPARK_WORKER_MEMORY=2G         # 메모리 제한
       - SPARK_NO_DAEMONIZE=true
       - SPARK_LOG_DIR=/opt/spark/logs
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - JDBC_URL=${JDBC_URL}
     command: >
       bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077 --webui-port 8082"
     ports:
@@ -309,12 +317,17 @@ services:
     container_name: spark-worker-2
     depends_on:
       - spark-master
+    env_file:
+      - .env    
     environment:
       - SPARK_MODE=worker
       - SPARK_WORKER_CORES=2
       - SPARK_WORKER_MEMORY=2G
       - SPARK_NO_DAEMONIZE=true
       - SPARK_LOG_DIR=/opt/spark/logs
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - JDBC_URL=${JDBC_URL}
     command: >
       bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077 --webui-port 8083"
     ports:
@@ -333,12 +346,17 @@ services:
     container_name: spark-worker-3
     depends_on:
       - spark-master
+    env_file:
+      - .env    
     environment:
       - SPARK_MODE=worker
       - SPARK_WORKER_CORES=2
       - SPARK_WORKER_MEMORY=2G
       - SPARK_NO_DAEMONIZE=true
       - SPARK_LOG_DIR=/opt/spark/logs
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - JDBC_URL=${JDBC_URL}
     command: >
       bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077 --webui-port 8083"
     ports:
@@ -360,7 +378,7 @@ networks:
     driver: bridge
 volumes:
   postgres_data:
-  airflow_data:
+  # airflow_data:
 
 
 

@@ -90,8 +90,8 @@ def main():
         #  Watermark 설정: 1분 지연된 데이터까지 허용
         df_watermarked = df.withWatermark("event_time", "1 minutes")
         
-        #  Watermark 기반 상태 관리 중복 제거:
-        # (user_session, product_id, event_time) 조합이 Watermark 기간 동안 고유함을 보장 (Exactly-Once)
+        #  Watermark 기반 상태 관리 중복 제거
+        # (user_session, product_id, event_time) 조합
         df_deduped = df_watermarked.dropDuplicates(
             ["user_session", "product_id", "event_time"]
         )
@@ -100,7 +100,7 @@ def main():
         windowed_counts = (
             df_deduped
               .groupBy(
-                  window(col("event_time"), "3 minutes"),
+                  window(col("event_time"), "5 minutes"),
                   col("product_id")
               )
               .agg(count("*").alias("view_count"))

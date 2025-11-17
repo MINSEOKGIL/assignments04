@@ -191,11 +191,21 @@ def stream_all_csv(csv_dir, topic):
         print(f"\n🎉 모든 파일 전송 완료! 총 {len(files)}개 파일 처리됨\n")
         logger.info("🎯 All CSV files processed successfully.")
 
+    except KeyboardInterrupt:
+        print("\n⚠️ Ctrl+C 감지 → 안전 종료 중...")
+        logger.warning("⚠️ Interrupted by Ctrl+C during CSV streaming")
+    
+    
+    
     except Exception as e:
         logger.exception(f"❌ Error while processing CSV directory: {e}")
+   
     finally:
         try:
+
+            producer.flush()        # 🔥 무조건 실행
             producer.close(timeout=30)
+        
             print("🔒 Kafka Producer 연결 종료")
             logger.info("🔒 Producer closed safely")
         except Exception as e:
