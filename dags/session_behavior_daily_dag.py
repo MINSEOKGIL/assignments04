@@ -15,8 +15,8 @@ with DAG(
     dag_id="session_behavior_daily",
     description="Daily Session Behavior Analytics (Spark Submit)",
     default_args=default_args,
-    schedule_interval="15 0 * * *",   # 매일 00:15 실행
-    start_date=datetime(2025, 1, 1),
+    schedule_interval="15 0 * * *", 
+    start_date=datetime(2025, 11, 16),
     catchup=False,
     tags=["spark", "session_behavior", "batch"],
 ) as dag:
@@ -34,4 +34,4 @@ with DAG(
         verbose=True
     )
 
-    run_session_behavior
+    run_session_behavior >> "2차 분석 배치 "
