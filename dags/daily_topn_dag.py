@@ -14,7 +14,7 @@ with DAG(
     description="Calculate Daily Top-N Product Views using Spark (SparkSubmitOperator)",
     default_args=default_args,
     schedule_interval="30 0 * * *",   # 매일 00:30
-    start_date=datetime(2025, 1, 1),
+    start_date=datetime(2025, 11, 16),
     catchup=False,
     tags=["spark", "topn", "batch"],
 ) as dag:
@@ -23,8 +23,7 @@ with DAG(
         task_id="run_daily_topn",
         application="/opt/spark/jobs/spark_topn_job.py",   # spark job 파일
         name="DailyTopNJob",
-        conn_id="spark_default",                           # spark 연결
-        application_args=["daily", "{{ ds }}"],            # python 인자
+        conn_id="spark_default",                          
         jars="/opt/spark/extra-jars/postgresql-42.7.1.jar",
         executor_memory="2g",
         driver_memory="1g",
