@@ -21,7 +21,7 @@ with DAG(
 
     run_daily_topn = SparkSubmitOperator(
         task_id="run_daily_topn",
-        application="/opt/spark/jobs/spark_topn_job.py",   # spark job 파일
+        application="/opt/spark/jobs/spark_topn_job.py",   
         name="DailyTopNJob",
         conn_id="spark_default",                          
         jars="/opt/spark/extra-jars/postgresql-42.7.1.jar",
